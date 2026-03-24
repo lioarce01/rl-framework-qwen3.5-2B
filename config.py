@@ -232,7 +232,9 @@ def patch_qwen35_config(hf_config):
                 "num_key_value_heads", "intermediate_size", "max_position_embeddings",
                 "rms_norm_eps", "hidden_act", "tie_word_embeddings", "use_cache",
                 "pad_token_id", "eos_token_id", "head_dim", "layer_types",
-                "full_attention_interval", "attn_output_gate", "mtp_num_hidden_layers"]:
+                "full_attention_interval", "attn_output_gate", "mtp_num_hidden_layers",
+                "linear_num_value_heads", "linear_num_key_heads", "linear_key_head_dim",
+                "linear_value_head_dim", "linear_conv_kernel_dim"]:
         if hasattr(tc, key) and not hasattr(hf_config, key):
             setattr(hf_config, key, getattr(tc, key))
     return hf_config
