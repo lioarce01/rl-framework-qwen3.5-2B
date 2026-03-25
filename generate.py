@@ -19,7 +19,7 @@ import os
 from pathlib import Path
 
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline, Qwen3_5ForConditionalGeneration
 
 from config import Config, cfg, GEN_OUTPUT_DIR
 from data import extract_thinking, extract_solution, load_raw_dataset
@@ -42,7 +42,7 @@ def load_for_inference(model_path: str, config: Config):
     # Try loading as merged model; fall back to PEFT
     try:
         from peft import PeftModel
-        base = AutoModelForCausalLM.from_pretrained(
+        base = Qwen3_5ForConditionalGeneration.from_pretrained(
             config.model.model_id,
             torch_dtype=torch.bfloat16,
             device_map="auto",
@@ -52,7 +52,7 @@ def load_for_inference(model_path: str, config: Config):
         model = model.merge_and_unload()
         print(f"Loaded and merged PEFT adapter from: {model_path}")
     except Exception:
-        model = AutoModelForCausalLM.from_pretrained(
+        model = Qwen3_5ForConditionalGeneration.from_pretrained(
             model_path,
             torch_dtype=torch.bfloat16,
             device_map="auto",

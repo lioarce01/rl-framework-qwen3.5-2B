@@ -77,11 +77,11 @@ class LoraConfig_GRPO:
 
 @dataclass
 class SFTHyperparams:
-    per_device_train_batch_size: int = 2
-    gradient_accumulation_steps: int = 8     # effective batch = 16
+    per_device_train_batch_size: int = 1
+    gradient_accumulation_steps: int = 16    # effective batch = 16
     num_train_epochs: int = 5
     learning_rate: float = 2e-4
-    max_seq_length: int = 4096
+    max_seq_length: int = 2048
     warmup_ratio: float = 0.05
     lr_scheduler_type: str = "cosine"
     gradient_checkpointing: bool = True
@@ -228,15 +228,14 @@ def patch_qwen35_config(hf_config):
     tc = getattr(hf_config, "text_config", None)
     if tc is None:
         return hf_config
-    for key in ["vocab_size", "hidden_size", "num_hidden_layers", "num_attention_heads",
-                "num_key_value_heads", "intermediate_size", "max_position_embeddings",
-                "rms_norm_eps", "hidden_act", "tie_word_embeddings", "use_cache",
-                "pad_token_id", "eos_token_id", "head_dim", "layer_types",
-                "full_attention_interval", "attn_output_gate", "mtp_num_hidden_layers",
-                "linear_num_value_heads", "linear_num_key_heads", "linear_key_head_dim",
-                "linear_value_head_dim", "linear_conv_kernel_dim"]:
-        if hasattr(tc, key) and not hasattr(hf_config, key):
-            setattr(hf_config, key, getattr(tc, key))
+    # Copy every text_config attribute that isn't already on the outer config.
+    # This is necessary because Qwen3_5ForCausalLM passes the outer Qwen3_5Config
+    # directly to Qwen3_5TextModel, which then accesses text-only attributes
+    # (e.g. linear_num_value_heads, attention_dropout, rope_parameters) directly.
+    skip = {"model_type", "transformers_version"}
+    for key, val in vars(tc).items():
+        if key not in skip and not key.startswith("_") and not hasattr(hf_config, key):
+            setattr(hf_config, key, val)
     return hf_config
 
 

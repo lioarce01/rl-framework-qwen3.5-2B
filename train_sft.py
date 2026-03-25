@@ -15,10 +15,12 @@ import argparse
 import os
 from pathlib import Path
 
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
 import torch
 from datasets import Dataset, load_dataset
 from peft import LoraConfig
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, Qwen3_5ForConditionalGeneration
 from trl import SFTConfig, SFTTrainer
 
 from config import Config, cfg, patch_qwen35_config
@@ -47,7 +49,7 @@ def load_model_and_tokenizer(config: Config):
         AutoConfig.from_pretrained(model_source, trust_remote_code=True)
     )
 
-    model = AutoModelForCausalLM.from_pretrained(
+    model = Qwen3_5ForConditionalGeneration.from_pretrained(
         model_source,
         config=hf_config,
         quantization_config=bnb_config,
@@ -56,6 +58,12 @@ def load_model_and_tokenizer(config: Config):
         torch_dtype=torch.bfloat16,
     )
     model.config.use_cache = False  # Required for gradient checkpointing
+
+    # Offload the vision encoder to CPU — we only train on text, no pixel_values
+    # are ever passed, but the vision model still occupies VRAM if left on GPU.
+    if hasattr(model, "visual"):
+        model.visual.to("cpu")
+        model.visual.requires_grad_(False)
 
     tokenizer = AutoTokenizer.from_pretrained(
         model_source,
@@ -128,7 +136,7 @@ def run(config: Config = None, dataset: Dataset = None) -> str:
         gradient_accumulation_steps=sft_params.gradient_accumulation_steps,
         num_train_epochs=sft_params.num_train_epochs,
         learning_rate=sft_params.learning_rate,
-        max_seq_length=sft_params.max_seq_length,
+        max_length=sft_params.max_seq_length,
         warmup_ratio=sft_params.warmup_ratio,
         lr_scheduler_type=sft_params.lr_scheduler_type,
         gradient_checkpointing=sft_params.gradient_checkpointing,

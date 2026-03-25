@@ -23,15 +23,24 @@ from __future__ import annotations
 import argparse
 import os
 
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
 import torch
 from datasets import Dataset
 from peft import LoraConfig, PeftModel
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, Qwen3_5ForConditionalGeneration
 from trl import GRPOConfig, GRPOTrainer
 
 from config import Config, cfg, patch_qwen35_config
 from data import load_raw_dataset, prepare_grpo_dataset
 from rewards import REWARD_FUNCS
+
+
+def _offload_vision(model) -> None:
+    """Move the vision encoder to CPU — text-only training never uses it."""
+    if hasattr(model, "visual"):
+        model.visual.to("cpu")
+        model.visual.requires_grad_(False)
 
 
 # ---------------------------------------------------------------------------
@@ -68,7 +77,7 @@ def load_model_for_grpo(
         hf_config = patch_qwen35_config(
             AutoConfig.from_pretrained(base_source, trust_remote_code=True)
         )
-        base_model = AutoModelForCausalLM.from_pretrained(
+        base_model = Qwen3_5ForConditionalGeneration.from_pretrained(
             base_source,
             config=hf_config,
             quantization_config=bnb_config,
@@ -77,6 +86,7 @@ def load_model_for_grpo(
             torch_dtype=torch.bfloat16,
         )
         base_model.config.use_cache = False
+        _offload_vision(base_model)
         model = PeftModel.from_pretrained(base_model, model_path, is_trainable=True)
         print(f"Loaded SFT adapter from: {model_path}")
     else:
@@ -84,7 +94,7 @@ def load_model_for_grpo(
         hf_config = patch_qwen35_config(
             AutoConfig.from_pretrained(model_path, trust_remote_code=True)
         )
-        model = AutoModelForCausalLM.from_pretrained(
+        model = Qwen3_5ForConditionalGeneration.from_pretrained(
             model_path,
             config=hf_config,
             quantization_config=bnb_config,
@@ -93,6 +103,7 @@ def load_model_for_grpo(
             torch_dtype=torch.bfloat16,
         )
         model.config.use_cache = False
+        _offload_vision(model)
         print(f"Loaded base model from: {model_path}")
 
     return model
