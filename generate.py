@@ -19,9 +19,9 @@ import os
 from pathlib import Path
 
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline, Qwen3_5ForConditionalGeneration
+from transformers import AutoConfig, AutoTokenizer, Qwen3_5ForConditionalGeneration
 
-from config import Config, cfg, GEN_OUTPUT_DIR
+from config import Config, cfg, GEN_OUTPUT_DIR, LOCAL_MODEL_DIR, patch_qwen35_config
 from data import extract_thinking, extract_solution, load_raw_dataset
 from rewards import score_completion
 
@@ -39,25 +39,41 @@ def load_for_inference(model_path: str, config: Config):
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    # Try loading as merged model; fall back to PEFT
+    base_source = LOCAL_MODEL_DIR if Path(LOCAL_MODEL_DIR).exists() else config.model.model_id
+
+    # Try loading as merged model; fall back to direct load
     try:
         from peft import PeftModel
+        hf_config = patch_qwen35_config(
+            AutoConfig.from_pretrained(base_source, trust_remote_code=True)
+        )
         base = Qwen3_5ForConditionalGeneration.from_pretrained(
-            config.model.model_id,
+            base_source,
+            config=hf_config,
             torch_dtype=torch.bfloat16,
             device_map="auto",
             trust_remote_code=True,
         )
+        if hasattr(base, "visual"):
+            base.visual.to("cpu")
+            base.visual.requires_grad_(False)
         model = PeftModel.from_pretrained(base, model_path)
         model = model.merge_and_unload()
         print(f"Loaded and merged PEFT adapter from: {model_path}")
     except Exception:
+        hf_config = patch_qwen35_config(
+            AutoConfig.from_pretrained(model_path, trust_remote_code=True)
+        )
         model = Qwen3_5ForConditionalGeneration.from_pretrained(
             model_path,
+            config=hf_config,
             torch_dtype=torch.bfloat16,
             device_map="auto",
             trust_remote_code=True,
         )
+        if hasattr(model, "visual"):
+            model.visual.to("cpu")
+            model.visual.requires_grad_(False)
         print(f"Loaded model from: {model_path}")
 
     model.eval()

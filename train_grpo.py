@@ -28,7 +28,7 @@ os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 import torch
 from datasets import Dataset
 from peft import LoraConfig, PeftModel
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, Qwen3_5ForConditionalGeneration
+from transformers import AutoTokenizer, BitsAndBytesConfig, Qwen3_5ForConditionalGeneration
 from trl import GRPOConfig, GRPOTrainer
 
 from config import Config, cfg, patch_qwen35_config

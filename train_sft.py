@@ -20,7 +20,7 @@ os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 import torch
 from datasets import Dataset, load_dataset
 from peft import LoraConfig
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, Qwen3_5ForConditionalGeneration
+from transformers import AutoTokenizer, BitsAndBytesConfig, Qwen3_5ForConditionalGeneration
 from trl import SFTConfig, SFTTrainer
 
 from config import Config, cfg, patch_qwen35_config
@@ -144,8 +144,6 @@ def run(config: Config = None, dataset: Dataset = None) -> str:
         logging_steps=sft_params.logging_steps,
         save_strategy=sft_params.save_strategy,
         report_to=sft_params.report_to,
-        # Use loss on assistant tokens only (more efficient for SFT)
-        dataset_text_field=None,  # Use 'messages' format
     )
 
     trainer = SFTTrainer(
