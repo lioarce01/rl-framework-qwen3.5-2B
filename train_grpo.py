@@ -162,6 +162,9 @@ def run(
     # Model + tokenizer
     print(f"\nLoading model from: {model_path}")
     model = load_model_for_grpo(model_path, config, is_peft_checkpoint)
+    # Qwen3.5 VLM hybrid layers (DeltaNet + attention) crash under gradient
+    # checkpointing — disable it unconditionally for GRPO.
+    model.gradient_checkpointing_disable()
     tokenizer = load_tokenizer(model_path, config)
 
     # LoRA config for the new GRPO adapters
@@ -208,14 +211,40 @@ def run(
         report_to=grpo_params.report_to,
     )
 
+    # If we loaded an existing PeftModel (SFT checkpoint), GRPOTrainer cannot
+    # receive a new peft_config — it would try to add a second adapter on top.
+    # Instead we train the already-loaded SFT LoRA directly via GRPO.
     trainer = GRPOTrainer(
         model=model,
         reward_funcs=REWARD_FUNCS,             # list of callables from rewards.py
         args=grpo_config,
         train_dataset=dataset,
         processing_class=tokenizer,
-        peft_config=peft_config,
+        peft_config=None if is_peft_checkpoint else peft_config,
     )
+
+    # Patch the VLM backbone's compute_3d_position_ids to always return None.
+    #
+    # Root cause: Qwen3_5ForConditionalGeneration stores rope_deltas as instance
+    # state (set during generation with batch=num_generations). When logps are
+    # computed in chunks of batch=1, repeat_interleave(1 // num_generations = 0)
+    # produces an empty delta that broadcasts position_ids to batch=0, giving
+    # cos/sin with batch=0 while q/k have batch=1 → RoPE shape crash.
+    #
+    # Returning None forces the inner text model to build clean sequential
+    # position_ids from cache_position, which is correct for text-only training.
+    import types as _types
+    def _text_only_position_ids(self_m, **_kw):
+        self_m.rope_deltas = None
+        return None
+    # Navigate through PEFT wrapper if present
+    _vlm = getattr(model, "base_model", model)       # LoraModel or model itself
+    _vlm = getattr(_vlm, "model", _vlm)              # Qwen3_5ForConditionalGeneration
+    _vlm = getattr(_vlm, "model", _vlm)              # Qwen3_5Model (VLM backbone)
+    if hasattr(_vlm, "compute_3d_position_ids"):
+        _vlm.compute_3d_position_ids = _types.MethodType(_text_only_position_ids, _vlm)
+        _vlm.rope_deltas = None
+        print("Patched compute_3d_position_ids for text-only GRPO training.")
 
     print(f"Training on {len(dataset)} examples\n")
     trainer.train()

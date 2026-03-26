@@ -113,7 +113,7 @@ class GRPOHyperparams:
     temperature: float = 0.9
     top_p: float = 0.95
     repetition_penalty: float = 1.1         # Helps prevent Qwen3.5-2B thinking loops
-    gradient_checkpointing: bool = True
+    gradient_checkpointing: bool = False   # Disabled: Qwen3.5 VLM hybrid layers crash under grad checkpointing
     bf16: bool = True
     logging_steps: int = 10
     save_strategy: str = "epoch"

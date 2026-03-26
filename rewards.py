@@ -27,6 +27,26 @@ _THINK_CLOSE = re.compile(r"</think>", re.IGNORECASE)
 _BLANK_LINE  = re.compile(r"\n\s*\n")
 
 
+def _completion_to_str(completion) -> str:
+    """Normalize a completion to a plain string.
+
+    Newer TRL versions pass completions as list[dict] (conversation format).
+    Older versions pass plain str. Handle both.
+    """
+    if isinstance(completion, str):
+        return completion
+    if isinstance(completion, list):
+        # List of message dicts — concatenate assistant content
+        parts = []
+        for msg in completion:
+            if isinstance(msg, dict):
+                parts.append(str(msg.get("content", "")))
+            else:
+                parts.append(str(msg))
+        return "".join(parts)
+    return str(completion)
+
+
 def _extract_final_answer(text: str) -> str:
     """Return the text after </think>, stripped. Falls back to full text."""
     parts = re.split(r"</think>", text, flags=re.IGNORECASE)
@@ -64,6 +84,7 @@ def reward_correct(completions: list[str], **kwargs) -> list[float]:
     rewards = []
 
     for completion, gold in zip(completions, solutions):
+        completion = _completion_to_str(completion)
         pred = _extract_final_answer(completion)
         gold = str(gold).strip()
 
@@ -90,6 +111,7 @@ def reward_format(completions: list[str], **kwargs) -> list[float]:
     """
     rewards = []
     for text in completions:
+        text = _completion_to_str(text)
         has_open  = bool(_THINK_OPEN.search(text))
         has_close = bool(_THINK_CLOSE.search(text))
         after_close = _extract_final_answer(text) if has_close else ""
@@ -123,6 +145,7 @@ def reward_length_penalty(completions: list[str], **kwargs) -> list[float]:
     scale = 0.0002  # penalty per char above threshold
     rewards = []
     for text in completions:
+        text = _completion_to_str(text)
         excess = max(0, len(text) - threshold)
         rewards.append(-scale * excess)
     return rewards
@@ -142,6 +165,7 @@ def reward_reasoning_quality(completions: list[str], **kwargs) -> list[float]:
     """
     rewards = []
     for text in completions:
+        text = _completion_to_str(text)
         # Extract thinking content only
         match = re.search(r"<think>(.*?)</think>", text, re.DOTALL | re.IGNORECASE)
         thinking = match.group(1) if match else ""
